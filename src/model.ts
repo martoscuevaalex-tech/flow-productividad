@@ -1,5 +1,5 @@
-export type Task = { id:string; title:string; date:string; category:string; priority:'alta'|'media'|'baja'; notes:string; done:boolean; deleted:boolean; version:number; completed_at:string|null; recurrence:'daily'|'none'; series_id:string|null; repeat_until:string|null };
-export type Patch = Partial<Pick<Task,'title'|'date'|'category'|'priority'|'notes'|'done'|'deleted'|'recurrence'|'series_id'|'repeat_until'>>;
+export type Task = { id:string; title:string; date:string; category:string; priority:'alta'|'media'|'baja'; notes:string; done:boolean; deleted:boolean; version:number; completed_at:string|null; recurrence:'daily'|'none'; series_id:string|null; repeat_until:string|null; sort_order:number };
+export type Patch = Partial<Pick<Task,'title'|'date'|'category'|'priority'|'notes'|'done'|'deleted'|'recurrence'|'series_id'|'repeat_until'|'sort_order'>>;
 export type Operation = {id:string; taskId:string; patch:Patch; version:number};
 export type Box = {tasks:Task[]; queue:Operation[]};
 export const emptyBox = ():Box => ({tasks:[],queue:[]});
@@ -21,8 +21,9 @@ export function validatePatch(p:Patch,creating=false):void {
   if(p.recurrence!==undefined&&!['daily','none'].includes(p.recurrence))throw new Error('Repetición inválida.');
   if(p.repeat_until!==undefined&&p.repeat_until!==null&&!validDate(p.repeat_until))throw new Error('Fecha de fin inválida.');
   if(p.series_id!==undefined&&p.series_id!==null&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.series_id))throw new Error('Rutina inválida.');
+  if(p.sort_order!==undefined&&(!Number.isSafeInteger(p.sort_order)||p.sort_order<0))throw new Error('Orden inválido.');
 }
-export function taskFrom(id:string,p:Patch):Task {return {id,title:p.title??'',date:p.date??dateKey(),category:'Personal',priority:'media',notes:'',done:false,deleted:false,version:0,completed_at:null,recurrence:'none',series_id:p.recurrence==='daily'?(p.series_id??id):null,repeat_until:null,...p};}
+export function taskFrom(id:string,p:Patch):Task {return {id,title:p.title??'',date:p.date??dateKey(),category:'Personal',priority:'media',notes:'',done:false,deleted:false,version:0,completed_at:null,recurrence:'none',series_id:p.recurrence==='daily'?(p.series_id??id):null,repeat_until:null,sort_order:0,...p};}
 export function projectAll(box:Box):Task[] {
   const map=new Map(box.tasks.map(t=>[t.id,{...t}]));
   for(const op of box.queue) {
@@ -46,7 +47,7 @@ export async function dailyDrafts(box:Box,today:string):Promise<{id:string;patch
     for(let day=addDays(root.date,1);day<=end;day=addDays(day,1)){
       const current=members.find(t=>t.date===day);if(current){if(!current.deleted)source=current;continue;}
       const id=await dailyId(root.id,day);
-      drafts.push({id,patch:{title:source.title,date:day,category:source.category,priority:source.priority,notes:source.notes,recurrence:'daily',series_id:root.id,done:false}});
+      drafts.push({id,patch:{title:source.title,date:day,category:source.category,priority:source.priority,notes:source.notes,recurrence:'daily',series_id:root.id,sort_order:source.sort_order,done:false}});
       dates.add(day);
     }
   }
@@ -90,7 +91,7 @@ export function readBox(key:string):Box {
   const b=JSON.parse(raw) as Box;
   if(!Array.isArray(b.tasks)||!Array.isArray(b.queue))throw new Error('No se pudo leer tu almacenamiento local.');
   // Version 1 checklists become daily routines; original completions remain untouched.
-  b.tasks=b.tasks.map(t=>t.recurrence===undefined?{...t,recurrence:'daily',series_id:t.id,repeat_until:null}:t);
+  b.tasks=b.tasks.map((t,i)=>({...t,...(t.recurrence===undefined?{recurrence:'daily' as const,series_id:t.id,repeat_until:null}:{}),sort_order:Number.isSafeInteger(t.sort_order)?t.sort_order:(i+1)*1024}));
   b.queue=b.queue.map(o=>o.version===0&&o.patch.recurrence===undefined?{...o,patch:{...o.patch,recurrence:'daily'}}:o);
   return b;
 }
