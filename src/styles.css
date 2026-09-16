@@ -26,3 +26,12 @@
 .access-link { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .access-link summary { cursor: pointer; font-size: 14px; line-height: 1.5; }
 .access-link[open] summary { margin-bottom: 12px; }
+
+/* Task ordering: one handle for mouse, touch and keyboard. */
+.drag-handle{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;width:28px;min-height:42px;flex:0 0 28px;margin:-4px 0;color:var(--muted);border-radius:7px;cursor:grab;touch-action:none}
+.drag-handle:hover,.drag-handle:focus-visible{color:var(--primary);background:var(--selected)}
+.task-list.is-sorting{user-select:none;-webkit-user-select:none}
+.task-row{transition:background .15s,box-shadow .15s,opacity .15s,transform .15s}
+.task-row.is-dragging{position:relative;z-index:2;background:var(--selected);box-shadow:0 8px 28px #0003;opacity:.82;transform:scale(.995)}
+.task-row.is-dragging .drag-handle{color:var(--primary);cursor:grabbing}
+@media(max-width:640px){.drag-handle{width:34px;flex-basis:34px;margin:-7px 0}.task-row{gap:8px}.day-detail .drag-handle{width:30px;flex-basis:30px}}
