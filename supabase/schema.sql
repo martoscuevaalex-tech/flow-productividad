@@ -15,6 +15,7 @@ create table if not exists public.flow_tasks (
   recurrence text not null default 'none' check (recurrence in ('daily','none')),
   series_id uuid,
   repeat_until date,
+  sort_order bigint not null default 0 check (sort_order>=0),
   updated_at timestamptz not null default now()
 );
 create unique index if not exists flow_series_day on public.flow_tasks(user_id,series_id,date);
@@ -50,8 +51,8 @@ begin
   if owner_id is null then raise exception 'FLOW_AUTH_REQUIRED'; end if;
   if p_operation_id is null or p_task_id is null or p_expected_version is null or p_expected_version<0 then raise exception 'FLOW_INVALID_OPERATION'; end if;
   if p_patch is null or jsonb_typeof(p_patch)<>'object' or p_patch='{}'::jsonb then raise exception 'FLOW_INVALID_PATCH'; end if;
-  if exists(select 1 from jsonb_object_keys(p_patch) k where k not in ('title','date','category','priority','notes','done','deleted','recurrence','series_id','repeat_until')) then raise exception 'FLOW_INVALID_FIELD'; end if;
-  if exists(select 1 from jsonb_each(p_patch) e where (e.key in ('done','deleted') and jsonb_typeof(e.value)<>'boolean') or (e.key not in ('done','deleted') and jsonb_typeof(e.value)<>'string' and not (e.key in ('series_id','repeat_until') and jsonb_typeof(e.value)='null'))) then raise exception 'FLOW_INVALID_TYPE'; end if;
+  if exists(select 1 from jsonb_object_keys(p_patch) k where k not in ('title','date','category','priority','notes','done','deleted','recurrence','series_id','repeat_until','sort_order')) then raise exception 'FLOW_INVALID_FIELD'; end if;
+  if exists(select 1 from jsonb_each(p_patch) e where (e.key in ('done','deleted') and jsonb_typeof(e.value)<>'boolean') or (e.key='sort_order' and jsonb_typeof(e.value)<>'number') or (e.key not in ('done','deleted','sort_order') and jsonb_typeof(e.value)<>'string' and not (e.key in ('series_id','repeat_until') and jsonb_typeof(e.value)='null'))) then raise exception 'FLOW_INVALID_TYPE'; end if;
   -- Lock both identities: repeated retries and concurrent changes serialize.
   perform pg_advisory_xact_lock(hashtextextended(p_operation_id::text,0));
   select * into previous from public.flow_operations where id=p_operation_id;
@@ -73,15 +74,15 @@ begin
     archived := routine.deleted or (routine.repeat_until is not null and (p_patch->>'date')::date>routine.repeat_until);
     -- Keep explicit import fields; automatic drafts inherit the latest template.
     if not p_patch ? 'repeat_until' then
-      p_patch := p_patch || jsonb_build_object('title',source_row.title,'category',source_row.category,'notes',source_row.notes,'priority',source_row.priority);
+      p_patch := p_patch || jsonb_build_object('title',source_row.title,'category',source_row.category,'notes',source_row.notes,'priority',source_row.priority,'sort_order',source_row.sort_order);
     end if;
   end if;
   perform pg_advisory_xact_lock(hashtextextended(p_task_id::text,1));
   select * into current_row from public.flow_tasks where id=p_task_id for update;
   if not found then
     if p_expected_version<>0 then raise exception 'FLOW_CONFLICT'; end if;
-    insert into public.flow_tasks(id,user_id,title,date,category,priority,notes,done,deleted,completed_at,recurrence,series_id,repeat_until)
-    values(p_task_id,owner_id,p_patch->>'title',(p_patch->>'date')::date,coalesce(p_patch->>'category','Personal'),coalesce(p_patch->>'priority','media'),coalesce(p_patch->>'notes',''),coalesce((p_patch->>'done')::boolean,false),archived,case when (p_patch->>'done')::boolean then now() else null end,recurring,case when recurring='daily' then coalesce(series,p_task_id) else null end,stop_day)
+    insert into public.flow_tasks(id,user_id,title,date,category,priority,notes,done,deleted,completed_at,recurrence,series_id,repeat_until,sort_order)
+    values(p_task_id,owner_id,p_patch->>'title',(p_patch->>'date')::date,coalesce(p_patch->>'category','Personal'),coalesce(p_patch->>'priority','media'),coalesce(p_patch->>'notes',''),coalesce((p_patch->>'done')::boolean,false),archived,case when (p_patch->>'done')::boolean then now() else null end,recurring,case when recurring='daily' then coalesce(series,p_task_id) else null end,stop_day,coalesce((p_patch->>'sort_order')::bigint,0))
     returning * into current_row;
   else
     if current_row.user_id<>owner_id then raise exception 'FLOW_FORBIDDEN'; end if;
@@ -101,6 +102,7 @@ begin
       deleted=coalesce((p_patch->>'deleted')::boolean,deleted),
       completed_at=case when p_patch ? 'done' then case when (p_patch->>'done')::boolean then coalesce(completed_at,now()) else null end else completed_at end,
       repeat_until=case when p_patch ? 'repeat_until' then stop_day else repeat_until end,
+      sort_order=coalesce((p_patch->>'sort_order')::bigint,sort_order),
       version=version+1,updated_at=now()
     where id=p_task_id returning * into current_row;
   end if;
