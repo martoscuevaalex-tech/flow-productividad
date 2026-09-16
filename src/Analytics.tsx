@@ -1,0 +1,25 @@
+import {metrics,type Task} from './model';
+const palette=['#be78ff','#4ecdf3','#587df8','#ee7bd8','#a7a9b5'];
+export function TrendChart({tasks,dates,monthly}:{tasks:Task[];dates:string[];monthly:boolean}){
+  const values=dates.map(d=>metrics(tasks,[d]));
+  const max=Math.max(4,...values.map(v=>v.total));const width=640,height=205;
+  const coords=(key:'done'|'total')=>values.map((m,i)=>[i*(width/(Math.max(1,dates.length-1))),height-m[key]/max*height]);
+  const path=(points:number[][])=>points.map((p,i)=>`${i?'L':'M'}${p[0]},${p[1]}`).join(' ');
+  const done=coords('done'),total=coords('total');
+  return <div className="trend-chart"><div className="trend-axis">{[max,Math.round(max*.75),Math.round(max*.5),Math.round(max*.25),0].map((v,i)=><span key={i}>{v}</span>)}</div><div className="trend-plot"><svg viewBox={`-4 -8 ${width+8} ${height+20}`} preserveAspectRatio="none" role="img" aria-label={dates.map((d,i)=>`${d}: ${values[i].done} cumplidas de ${values[i].total}`).join('; ')}><defs><linearGradient id="flow-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#53cef0" stopOpacity=".3"/><stop offset="100%" stopColor="#53cef0" stopOpacity="0"/></linearGradient></defs>{[0,.25,.5,.75,1].map(v=><line key={v} x1="0" x2={width} y1={height*v} y2={height*v} stroke="var(--border)" strokeWidth="1"/>)}{dates.filter((_,i)=>!monthly||i%5===0).map(d=><line key={d} x1={dates.indexOf(d)*width/Math.max(1,dates.length-1)} x2={dates.indexOf(d)*width/Math.max(1,dates.length-1)} y1="0" y2={height} stroke="var(--border)" strokeWidth="1"/>)}<path d={`${path(done)} L${width},${height} L0,${height} Z`} fill="url(#flow-area)"/><path d={path(total)} stroke="#c87bf8" strokeWidth="2" strokeDasharray="3 5" fill="none" vectorEffect="non-scaling-stroke"/><path d={path(done)} stroke="#54cef4" strokeWidth="2.5" fill="none" vectorEffect="non-scaling-stroke"/>{!monthly&&done.map((p,i)=><circle key={i} cx={p[0]} cy={p[1]} r="4" fill="#54cef4" stroke="var(--surface)" strokeWidth="2"/>)}</svg><div className="trend-labels">{dates.map((d,i)=><span key={d}>{monthly?(i===0||(i+1)%5===0?String(i+1):''):['D','L','M','X','J','V','S'][new Date(`${d}T12:00:00`).getDay()]}</span>)}</div></div></div>;
+}
+export function CategoryDonut({tasks,dates}:{tasks:Task[];dates:string[]}){
+  const set=new Set(dates);const period=tasks.filter(t=>set.has(t.date));
+  const counts=new Map<string,number>();for(const t of period)counts.set(t.category,(counts.get(t.category)??0)+1);
+  const sorted=[...counts].sort((a,b)=>b[1]-a[1]);const groups=sorted.slice(0,4);if(sorted.length>4)groups.push(['Otras',sorted.slice(4).reduce((sum,[,n])=>sum+n,0)]);
+  let position=0;const slices=groups.map(([,count],i)=>{const start=position;position+=count/period.length*100;return `${palette[i]} ${start}% ${position}%`;});
+  return <section className="panel distribution-panel"><div className="panel-head"><h2>Distribución por lista</h2><span className="panel-tag">TAREAS</span></div><div className="distribution-body"><div className="category-donut" style={{background:slices.length?`conic-gradient(${slices.join(',')})`:'var(--track)'}} role="img" aria-label={groups.map(([c,n])=>`${c}: ${n} tareas`).join('; ')||'Sin tareas'}><div><strong>{period.length}</strong><span>programadas</span></div></div><div className="donut-legend">{groups.length?groups.map(([name,count],i)=><div key={name}><i style={{background:palette[i]}}/><span>{name}</span><strong>{Math.round(count/period.length*100)}%</strong></div>):<p>Las listas aparecerán<br/>al añadir tareas.</p>}</div></div></section>;
+}
+export function CompletionDonut({tasks,dates}:{tasks:Task[];dates:string[]}){
+  const m=metrics(tasks,dates);
+  return <section className="panel distribution-panel"><div className="panel-head"><h2>Balance del periodo</h2><span className="panel-tag">PROGRESO</span></div><div className="distribution-body"><div className="category-donut completion-donut" style={{background:`conic-gradient(#cf67ee 0% ${m.percent}%, var(--track) ${m.percent}% 100%)`}}><div><strong>{m.percent}<small>%</small></strong><span>completado</span></div></div><div className="donut-legend"><div><i style={{background:'#cf67ee'}}/><span>Cumplidas</span><strong>{m.done}</strong></div><div><i style={{background:'var(--track)'}}/><span>Pendientes</span><strong>{m.pending}</strong></div></div></div></section>;
+}
+export function WeekBars({tasks,dates}:{tasks:Task[];dates:string[]}){
+  const values=dates.map(d=>metrics(tasks,[d]));const max=Math.max(4,...values.map(m=>m.total));
+  return <section className="panel week-bar-panel"><div className="panel-head"><h2>Cumplimiento semanal</h2></div><div className="compact-bars" role="img" aria-label={dates.map((d,i)=>`${d}: ${values[i].done}/${values[i].total}`).join('; ')}>{values.map((m,i)=><div className="compact-column" key={dates[i]}><div className="compact-bar-area"><span className="compact-total" style={{height:`${m.total/max*100}%`}}/><span className="compact-done" style={{height:`${m.done/max*100}%`}}/></div><span>{['L','M','X','J','V','S','D'][i]}</span></div>)}</div><p className="mini-chart-note">Tareas cumplidas por día</p></section>;
+}
